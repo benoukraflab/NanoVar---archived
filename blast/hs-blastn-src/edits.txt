@@ -1,0 +1,3 @@
+27-4-2019
+./sources/utility.h
+	line 205: isnan -> std::isnan

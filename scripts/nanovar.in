@@ -1,0 +1,1238 @@
+#!/bin/bash
+
+# NanoVar
+#
+# This is the main executable file of the program NanoVar.
+#
+# Copyright (C) 2019 Tham Cheng Yong, Roberto Tirado Magallanes, Touati Benoukraf.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#Record executed command line
+recordcommand="$0 $@"
+
+#Helpmenu
+function helpmenu() { echo "NanoVar - Structural variant caller for low-depth Nanopore Sequencing.
+Author: Tham Cheng Yong
+Version 1.0
+Usage:
+    "$0" [OPTIONS] -r reference_genome.fa -l longread.fa -t num_threads -o <Output_Dir> -f hg38
+
+Options:
+    -h, --help          Show this help menu
+    -v, --version       Print NanoVar version
+    -q, --quiet         Disable progress bar verbose
+    -r FILE             Reference genome in FASTA
+    -l FILE             Long reads (ONT/PacBio/etc) in FASTQ/FASTA or gzip/zip-compressed FASTQ/FASTA
+    -s1 FILE            NGS paired-end short read first mates in FASTQ/FASTA or gzip-compressed FASTQ/FASTA (Optional)
+    -s2 FILE            NGS paired-end short read second mates in FASTQ/FASTA or gzip-compressed FASTQ/FASTA (Optional)
+    -o DIR              Output directory
+    -t INT              Number of threads available for use. (<=53) [Default=1]
+    -f, --filter FILE   BED file with genomic regions to be excluded (e.g. telomeres and centromeres). Either specify name of 
+                        supported reference genome filter (i.e. hg38, hg19, mm10, mm9) or provide FULL path to own BED file. [Default=None]
+    -w, --SVlen INT     Minimum length estimation of SV to be detected, >=100 bases recommended. [Default=100]
+    -n, --mincov INT    Minimum coverage of short reads spanning over SV breakpoint region on long read [Default=0]
+    -m, --maxcov INT    Maximum coverage of short reads spanning over SV breakpoint region on long read [Default=100]
+    -p FLOAT            Minimum percentage of unmapped bases within a long read to be considered as a split-read (0.05 to 0.50) [Default=0.05]
+    -S FLOAT            SV threshold score, increasing this will increase precision but decrease recall (<=0) [Default=2.6]"
+}
+
+function version() { echo "NanoVar-1.0";
+}
+
+#Creating variables for tools
+maindir=LOADING
+pyreadlink=$maindir/scripts/py_readlink.py
+fastavalid=$maindir/scripts/nv_fasta_validator.py
+fastqavalid=$maindir/scripts/nv_fastq-a_validator.py
+bedvalid=$maindir/scripts/nv_bed_validator.py
+blastpath=$maindir/blast
+hsblast=$maindir/blast/hs-blastn-src/hs-blastn
+hsblastparse=$maindir/scripts/nv_hsblast_parse.py
+hsblastdetect=$maindir/scripts/nv_hsblast_SV_detector.py
+gaphg38=$maindir/genome_filter/hg38_filter.bed
+gaphg19=$maindir/genome_filter/hg19_filter.bed
+gapmm10=$maindir/genome_filter/mm10_filter.bed
+gapmm9=$maindir/genome_filter/mm9_filter.bed
+outlier=$maindir/scripts/nv_lcov_outlier.py
+svparse=$maindir/scripts/nv_breakpoint_parser.py
+svrandomsplit=$maindir/scripts/nv_hsblast_random_spliter.py
+svoverlap=$maindir/scripts/nv_lr_overlap.py
+svANNinfer=$maindir/scripts/keras_ANN_inference.py
+ANNmodel=$maindir/model/ANN.E100B400L2N12-5D0.2SGDsee30_het_v5.h5
+svvcfparse=$maindir/scripts/nv_parser_VCF.py
+svreport=$maindir/scripts/nv_report.py
+svcorrect=$maindir/scripts/nv_nanocorrector.py
+svscov=$maindir/scripts/nv_scov.py
+samtoolpath=LOADING
+bedtoolpath=LOADING
+bowtie2path=LOADING
+bowtie2build=LOADING
+svchrnum=$maindir/scripts/nv_chrnum.py
+
+#Activate virtual environment for python
+source $maindir/nv_virtualenv/bin/activate
+
+#Reading inputs and parameters
+while [ ! $# -eq 0 ]
+do
+	case "$1" in
+		--help | -h)
+			helpmenu
+			deactivate
+			exit 0
+			;;
+                --version | -v)
+                        version
+                        deactivate
+                        exit 0
+                        ;;
+                -r)     
+                        ref=$(python $pyreadlink $2)
+                        shift
+                        shift
+                        ;;
+                -l)     
+                        longread=$(python $pyreadlink $2)
+                        shift
+                        shift
+                        ;;
+                -s1)    
+                        shortr1=$(python $pyreadlink $2)
+                        shift
+                        shift
+                        ;;
+                -s2)    
+                        shortr2=$(python $pyreadlink $2)
+                        shift
+                        shift
+                        ;;
+                -o)
+                        out=$(python $pyreadlink $2)
+                        shift
+                        shift
+                        ;;
+                --filter | -f)
+                        filter=$2
+                        shift
+                        shift
+                        ;;
+                --SVlen | -w)
+                        svlen=$2
+                        shift
+                        shift
+                        ;;
+                -t)     
+                        nthreads=$2
+                        shift
+                        shift
+                        ;;
+                -p)     
+                        isvthres=$2
+                        shift
+                        shift
+                        ;;
+                --mincov | -n)
+                        mincov=$2
+                        shift
+                        shift
+                        ;;
+                --maxcov | -m)
+                        maxcov=$2
+                        shift
+                        shift
+                        ;;
+                -S)
+                        pthres=$2
+                        shift
+                        shift
+                        ;;
+                --quiet | -q)
+                        quiet=1
+                        shift
+                        ;;
+                *)
+                        echo "ERROR: Unknown option $1"
+                        deactivate
+                        exit 1
+                        ;;
+	esac
+done
+
+#Verbosity
+if [ "$quiet" == 1 ]; then
+        stout=/dev/null
+else
+        stout=/dev/stdout
+fi
+
+#Checking presence of essential input files
+if [ -z "$ref" -o -z "$longread" ]; then
+        echo "<ERROR: Input error>"
+        echo Usage: $0 \[OPTIONS\] -r reference_genome.fa -l longread.fa -o \<Output_Dir\>
+        echo Try $0 --help/-h for more information.
+        deactivate
+        exit 1
+fi
+
+#Check correct paths of all NanoVar components
+if [ -s "$pyreadlink" -a -s "$fastavalid" -a -s "$fastqavalid" -a -s "$bedvalid" -a -s "$blastpath/makeblastdb" -a -s "$blastpath/windowmasker" -a -s "$hsblast" -a -s "$hsblastparse" -a -s "$hsblastdetect" -a -s "$gaphg38" -a -s "$gaphg19" -a -s "$gapmm10" -a -s "$gapmm9" -a -s "$outlier" -a -s "$svparse" -a -s "$svrandomsplit" -a -s "$svoverlap" -a -s "$svANNinfer" -a -s "$ANNmodel" -a -s "$svvcfparse" -a -s "$svreport" -a -s "$svcorrect" -a -s "$svscov" -a -s "$bowtie2path" -a -s "$bowtie2build" -a -s "$samtoolpath" -a -s "$bedtoolpath" -a -s "$svchrnum" ]; then
+        :
+else
+        echo "<ERROR: NanoVar components missing, please re-configure and re-compile NanoVar>"
+        deactivate
+        exit 1
+fi
+
+#bowtie2 switch
+bow=0 #bowtie2 enabled
+if [ "$bow" == 1 ]; then #bowtie2 disabled
+        if [ ! -z "$shortr1" -o ! -z "$shortr2" ]; then #if either shortr variable are not empty
+                echo "<ERROR: NGS short-read fasta input not allowed, NanoVar was configured with bowtie2 disabled, please re-configure and re-compile to enable bowtie2 usage for NGS reads>"
+                deactivate
+                exit 1
+        fi
+elif [ "$bow" == 0 ]; then #bowtie2 enabled
+        if [ ! -z "$shortr1" -a ! -z "$shortr2" ]; then #if both shortr variables are not empty
+                if [ ! -s "$shortr1" -o ! -s "$shortr2" ]; then #if either shortr variable do not exist
+                        echo "<ERROR: Short-read fasta files not found>"
+                        deactivate
+                        exit 1
+                else #if both shortr variables do exist
+                        s1fileinfo=$(file $shortr1)
+                        if [[ $s1fileinfo = *"gzip"* ]]; then
+                                readshortread1=(zcat "$shortr1")
+                        elif [[ $s1fileinfo = *"Zip"* ]]; then
+                                readshortread1=(zcat "$shortr1")
+                        elif [[ $s1fileinfo = *"text"* ]]; then
+                                readshortread1=(cat "$shortr1")
+                        fi
+                        s2fileinfo=$(file $shortr2)
+                        if [[ $s2fileinfo = *"gzip"* ]]; then
+                                readshortread2=(zcat "$shortr2")
+                        elif [[ $s2fileinfo = *"Zip"* ]]; then
+                                readshortread2=(zcat "$shortr2")
+                        elif [[ $s2fileinfo = *"text"* ]]; then
+                                readshortread2=(cat "$shortr2")
+                        fi
+                        shortr1test="${readshortread1[@]}"
+                        shortr2test="${readshortread2[@]}"
+                        shorttype1=$(python $fastqavalid <($shortr1test))
+                        shorttype2=$(python $fastqavalid <($shortr2test))
+                        case $shorttype1 in
+                                fasta)
+                                        shorttype="-f"
+                                        ;;
+                                fastq)
+                                        shorttype="-q"
+                                        ;;
+                                corrupt)
+                                        echo "<ERROR: Short-read fasta file may be corrupted>"
+                                        deactivate
+                                        exit 1
+                                        ;;
+                        esac
+                        case $shorttype2 in
+                                fasta)
+                                        shorttype="-f"
+                                        ;;
+                                fastq)
+                                        shorttype="-q"
+                                        ;;
+                                corrupt)
+                                        echo "<ERROR: Short-read fasta file may be corrupted>"
+                                        deactivate
+                                        exit 1
+                                        ;;
+                        esac
+                        
+                fi
+        fi
+fi
+
+#Check if long read fasta file is gz compressed
+if [ -s "$longread" ]; then
+        fileinfo=$(file $longread)
+else
+        echo "<ERROR: Long-read fasta file not found>"
+        deactivate
+        exit 1
+fi
+if [[ $fileinfo = *"gzip"* ]]; then
+        readlongread=(zcat "$longread")
+elif [[ $fileinfo = *"Zip"* ]]; then
+        readlongread=(zcat "$longread")
+elif [[ $fileinfo = *"text"* ]]; then
+        readlongread=(cat "$longread")
+fi
+
+#Read array for cat/zcat longread
+longr="${readlongread[@]}"
+
+#Check spaces in fasta header ID and line wrapping in longread.fa sequence
+longreadfa=$(python $fastavalid <($longr))
+case $longreadfa in
+        empty)
+                echo "<ERROR: Empty FASTQ/FASTA file>"
+                deactivate
+                exit 1
+                ;;
+        *corrupt)
+                line=${longreadfa% corrupt}
+                echo "<ERROR: Incorrect FASTQ/FASTA format near line $line>"
+                deactivate
+                exit 1
+                ;;
+esac
+
+#Define ref variables
+ref_prefix=$(basename "$ref" | cut -d'.' -f1)
+ref_file=$(basename "$ref")
+
+#Index reference FASTA
+$samtoolpath faidx $ref || (echo "<ERROR: samtools faidx error>" ; deactivate ; exit 1)
+
+#Check ref faidx file
+if [ ! -s $ref.fai ]; then
+        echo "<ERROR: Reference fai index not found, please check reference file format>"
+        deactivate
+        exit 1
+fi
+
+#Creating Log file and Command Log file
+curr_dir=$(pwd)
+logfile="`date "+%d-%b~%H-%M-%S"`_NanoVar.log"
+commandlog="`date "+%d-%b~%H-%M-%S"`_NanoVar.commandlog"
+{ echo "Log file for NanoVar-1.0.
+`date`
+Command $recordcommand
+<Long read fasta file contains no spaces> --- PASSED
+<Long read fasta file contains no wraped lines> --- PASSED"
+} >> $curr_dir/$logfile
+
+#Creating directories
+if [ -z "$out" ]; then
+        echo "<No ouput directory specified, taking current directory as output directory>" >> $logfile
+        if [ ! -d "nanovar_run" ]; then
+                mkdir nanovar_run
+                echo create nanovar_run directory >> $logfile
+        else
+                echo nanovar_run directory already present >> $logfile
+        fi
+        if [ ! -d "nanovar_results" ]; then
+                mkdir nanovar_results
+                echo create nanovar_results directory >> $logfile
+        else
+                echo nanovar_results directory already present >> $logfile
+        fi
+	cd nanovar_results
+        if [ ! -d "figures" ]; then
+                mkdir figures
+                echo create figures directory >> ../$logfile
+        else
+                echo figures directory already present >> ../$logfile
+        fi
+	cd ..
+        cd nanovar_run
+        if [ ! -d "bowtie2_shortreads" ]; then
+                mkdir bowtie2_shortreads
+                echo create bowtie2_shortreads directory >> ../$logfile
+        else
+                echo bowtie2_shortreads directory already present >> ../$logfile
+        fi
+        if [ ! -d "hsblast_longreads" ]; then
+                mkdir hsblast_longreads
+                echo create hsblast_longreads directory >> ../$logfile
+        else
+                echo hsblast_longreads directory already present >> ../$logfile
+        fi
+else
+        if [ ! -d "$out" ]; then
+                mkdir $out
+                cd $out
+        else
+                cd $out
+        fi
+        if [ ! -s $logfile ]; then
+                mv  $curr_dir/$logfile $out
+        fi
+        if [ ! -d "nanovar_run" ]; then
+                mkdir nanovar_run
+                echo create nanovar_run directory >> $logfile
+        else
+                echo nanovar_run directory already present >> $logfile
+        fi
+        if [ ! -d "nanovar_results" ]; then
+                mkdir nanovar_results
+                echo create nanovar_results directory >> $logfile
+        else
+                echo nanovar_results directory already present >> $logfile
+        fi
+	cd nanovar_results
+        if [ ! -d "figures" ]; then
+                mkdir figures
+                echo create figures directory >> ../$logfile
+        else
+                echo figures directory already present >> ../$logfile
+        fi
+	cd ..
+        cd nanovar_run
+        if [ ! -d "bowtie2_shortreads" ]; then
+                mkdir bowtie2_shortreads
+                echo create bowtie2_shortreads directory >> ../$logfile
+        else
+                echo bowtie2_shortreads directory already present >> ../$logfile
+        fi
+        if [ ! -d "hsblast_longreads" ]; then
+                mkdir hsblast_longreads
+                echo create hsblast_longreads directory >> ../$logfile
+        else
+                echo hsblast_longreads directory already present >> ../$logfile
+        fi
+fi
+
+#Get chromosome names and sizes
+cut -f 1,2 $ref.fai > $ref_prefix.genomesizes
+
+#Check ref.genomesizes file
+if [ ! -s $ref_prefix.genomesizes ]; then
+        echo "<ERROR: ref.genomesizes file not generated, please check existence of reference.fai file>"
+        deactivate
+        exit 1
+fi
+
+#Check for symbols in chromosome names
+chroname=$(cut -f 1 $ref_prefix.genomesizes)
+if [[ ($chroname = *"-"*) || ($chroname = *":"*) || ($chroname = *"~"*) ]]; then
+        echo "<ERROR: Chromosome names in reference genome contains forbidden characters (e.g ": - ~" ), please remove them>"
+        deactivate
+        exit 1
+fi
+
+#Calculate genome size
+totalgsize=$(awk -F'\t' '{s+=$2} END {printf "%.f", s}' $ref_prefix.genomesizes)
+
+#Configuring filter BED file
+if [ -z "$filter" ]; then
+        filter='0'
+else
+        if [ "$filter" == "hg38" ]; then
+                filter=$gaphg38
+                filtertest=$(python $bedvalid $filter $ref_prefix.genomesizes)
+        elif [ "$filter" == "hg19" ]; then
+                filter=$gaphg19
+                filtertest=$(python $bedvalid $filter $ref_prefix.genomesizes)
+        elif [ "$filter" == "mm10" ]; then
+                filter=$gapmm10
+                filtertest=$(python $bedvalid $filter $ref_prefix.genomesizes)
+        elif [ "$filter" == "mm9" ]; then
+                filter=$gapmm9
+                filtertest=$(python $bedvalid $filter $ref_prefix.genomesizes)
+        else
+                if [ -s "$filter" ]; then
+                        filtertest=$(python $bedvalid $filter $ref_prefix.genomesizes)
+                else
+                        echo "<ERROR: Filter BED file not found, please provide FULL path to file>"
+                        deactivate
+                        exit 1
+                fi
+        fi
+        case $filtertest in
+        bedpass)
+                :
+                ;;
+        *invalidbedregion)
+                line=${filtertest% invalidbedregion}
+                echo "<ERROR: Invalid BED file, BED region out of range of chromosome on line $line>"
+                deactivate
+                exit 1
+                ;;
+        *invalidbedrange)
+                line=${filtertest% invalidbedrange}
+                echo "<ERROR: Invalid BED file, BED first column value larger than second column on line $line>"
+                deactivate
+                exit 1
+                ;;
+        *invalidbedvalue)
+                line=${filtertest% invalidbedvalue}
+                echo "<ERROR: Invalid BED file, BED value(s) on line $line is invalid>"
+                deactivate
+                exit 1
+                ;;
+        *invalidbedchrom)
+                line=${filtertest% invalidbedchrom}
+                echo "<ERROR: Invalid BED file or reference genome, BED chromosome name on line $line is not found in reference genome>"
+                deactivate
+                exit 1
+                ;;
+        esac
+fi
+
+#Temporary deactivate python nv_virtualenv
+deactivate
+
+#Configuring parameters
+if [ -z "$nthreads" ]; then
+        nthreads=1
+fi
+
+if [ -z "$svlen" ]; then
+        svlen=50
+else #Apply buffer
+        if [ "$svlen" -le 50 ]; then
+                svlen=1
+        else
+                svlen=$(($svlen-50))
+        fi
+fi
+
+if [ -z "$isvthres" ]; then
+        isvthres=0.05
+        svthres=`echo $isvthres | awk '{print 1 - \$1}'`
+else
+        svthres=`echo $isvthres | awk '{print 1 - \$1}'`
+fi
+
+if [ -z "$mincov" ]; then
+        mincov=0
+fi
+
+if [ -z "$maxcov" ]; then
+        maxcov=100
+fi
+
+if [ -z "$minovl" ]; then
+        minovl=1
+fi
+
+if [ -z "$pthres" ]; then
+        pthres=2.6
+fi
+
+annthres=0
+
+if [ -z "$shortr1" -a -z "$shortr2" ]; then
+        shortr1="NIL"
+        shortr2="NIL"
+        onlylong="Short paired-end reads not provided, only long reads will be used for SV characterization"
+        mincov=NA
+        maxcov=NA
+elif [ -z "$shortr1" -o -z "$shortr2" ]; then
+        echo "<ERROR: Only one mate of short reads detected, NanoVar do not support single-end short reads, please input both mates of paired-end short reads or none>"
+        rm ../$logfile
+        exit 1
+else
+        onlylong="Short paired-end reads will be incorporated"
+fi
+
+#Logging parameters
+{ echo "
+Inputs and parameters:
+main=$maindir
+refgenome=$ref
+longread=$longread
+shortread1=$shortr1
+shortread2=$shortr2
+$onlylong
+output_dir=$out
+no_of_threads=$nthreads
+Genomic_region_excluded_file=$filter
+Neural_network_threshold=$annthres
+SV_threshold_score=$pthres
+SV_alignment_threshold=$svthres
+Buffered_SV_length_threshold=$svlen
+minimum_short_cov=$mincov
+maximum_short_cov=$maxcov
+Total_long_reads=$longreadfa
+
+Starting run..."
+} >> ../$logfile
+
+#Start logging in command log file
+{ echo "NanoVar Command Log
+`date`"
+} > $commandlog
+
+echo "NanoVar initiated --- $(date)" >> $stout
+echo -ne 'Progress: [ -------------------- ]  (0%)\r' >> $stout
+
+#Build BLAST genome DB
+cd hsblast_longreads
+if [ ! -s $ref.nsq ]; then
+        echo [$(date "+%a-%d-%b %H:%M:%S")] Build BLAST DB >> ../../$logfile
+        echo $blastpath/makeblastdb -in $ref -input_type fasta -dbtype nucl >> ../$commandlog
+        $blastpath/makeblastdb -in $ref -input_type fasta -dbtype nucl -logfile tmp
+else
+        echo SKIPPING - Build BLAST DB >> ../../$logfile
+        echo SKIPPING - $blastpath/makeblastdb -in $ref -input_type fasta -dbtype nucl >> ../$commandlog
+fi
+
+echo -ne 'Progress: [ #------------------- ]  (2%)\r' >> $stout
+
+#Generate frequency counts file
+if [ ! -s $ref_file.counts ]; then
+        if [ -s $ref.nsq ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] Generate freq counts file >> ../../$logfile
+                echo $blastpath/windowmasker -in $ref -infmt blastdb -mk_counts -out $ref_file.counts >> ../$commandlog
+                $blastpath/windowmasker -in $ref -infmt blastdb -mk_counts -out $ref_file.counts 2> tmp
+        else
+                echo \*\*\*BLAST DB files required!\*\*\* >> ../$commandlog
+                echo \*\*\*BLAST DB files required!\*\*\* >> ../../$logfile
+                echo \*\*\*BLAST DB files required!\*\*\*
+                exit 1
+        fi
+else
+        echo SKIPPING - Generate freq counts file >> ../../$logfile
+        echo SKIPPING - $blastpath/windowmasker -in $ref -infmt blastdb -mk_counts -out $ref_file.counts >> ../$commandlog
+fi
+
+echo -ne 'Progress: [ #------------------- ]  (5%)\r' >> $stout
+
+#Convert frequency counts file to obinary
+if [ ! -s $ref_file.counts.obinary ]; then
+        if [ -s $ref_file.counts ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] Convert frequency counts file to obinary >> ../../$logfile
+                echo $blastpath/windowmasker -in $ref_file.counts -sformat obinary -out $ref_file.counts.obinary -convert >> ../$commandlog
+                $blastpath/windowmasker -in $ref_file.counts -sformat obinary -out $ref_file.counts.obinary -convert 2> tmp
+        else
+                echo \*\*\*Counts file required!\*\*\* >> ../$commandlog
+                echo \*\*\*Counts file required!\*\*\* >> ../../$logfile
+                echo \*\*\*Counts file required!\*\*\*
+                exit 1
+        fi
+else
+        echo SKIPPING - Convert frequency counts file to obinary >> ../../$logfile
+        echo SKIPPING - $blastpath/windowmasker -in $ref_file.counts -sformat obinary -out $ref_file.counts.obinary -convert >> ../$commandlog
+fi
+
+#Build FMD index
+if [ ! -s $ref.header ]; then
+        echo [$(date "+%a-%d-%b %H:%M:%S")] Build FMD index >> ../../$logfile
+        echo $hsblast index $ref >> ../$commandlog
+        $hsblast index $ref 1>tmp 2>&1
+else
+        echo SKIPPING - Build FMD index >> ../../$logfile
+        echo SKIPPING - $hsblast index $ref >> ../$commandlog
+fi
+
+echo -ne 'Progress: [ ##------------------ ]  (10%)\r' >> $stout
+
+#HS-BLAST read alignment search
+longr_prefix=$(basename "$longread" | cut -d'.' -f1)
+longr_name=$(basename "$longread")
+if [ ! -s $longr_prefix.hsblast-$ref_prefix ]; then
+        if [ -s $ref.header ] && [ -s $ref_file.counts.obinary ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] HS-BLAST read alignment search >> ../../$logfile
+                echo $hsblast align -db $ref -window_masker_db $ref_file.counts.obinary -query \<\($longr\) -out $longr_prefix.hsblast-$ref_prefix -outfmt 6 -num_threads $nthreads -max_target_seqs 3 -gapopen 0 -gapextend 4 -penalty -3 -reward 2 >> ../$commandlog
+                $hsblast align -db $ref -window_masker_db $ref_file.counts.obinary -query <($longr) -out $longr_prefix.hsblast-$ref_prefix -outfmt 6 -num_threads $nthreads -max_target_seqs 3 -gapopen 0 -gapextend 4 -penalty -3 -reward 2 2> tmp
+        else
+                echo \*\*\*FMD index or counts obinary file required!\*\*\* >> ../$commandlog
+                echo \*\*\*FMD index or counts obinary file required!\*\*\* >> ../../$logfile
+                echo \*\*\*FMD index or counts obinary file required!\*\*\*
+                exit 1
+        fi
+else
+        echo SKIPPING - HS-BLAST read alignment search >> ../../$logfile
+        echo SKIPPING - $hsblast align -db $ref -window_masker_db $ref_file.counts.obinary -query \<\($longr\) -out $longr_prefix.hsblast-$ref_prefix -outfmt 6 -num_threads $nthreads -max_target_seqs 3 -gapopen 0 -gapextend 4 -penalty -3 -reward 2 >> ../$commandlog
+fi
+
+echo -ne 'Progress: [ ######-------------- ]  (30%)\r' >> $stout
+
+#Save blastn command for VCF file
+echo $hsblast align -db $ref -window_masker_db $ref_file.counts.obinary -query \<\($longr\) -out $longr_prefix.hsblast-$ref_prefix -outfmt 6 -num_threads $nthreads -max_target_seqs 3 -gapopen 0 -gapextend 4 -penalty -3 -reward 2 > ../hsblastsavecmd.txt
+
+#Reactivate virtual environment for python
+source $maindir/nv_virtualenv/bin/activate
+
+#HS-BLAST Parse
+if [ ! -s $longr_prefix.hsblast-$ref_prefix.tsv ]; then
+        if [ -s $longr_prefix.hsblast-$ref_prefix ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] HS-BLAST Parse >> ../../$logfile
+                echo python $hsblastparse $longr_prefix.hsblast-$ref_prefix \<\($longr\) ../../$logfile \> $longr_prefix.hsblast-$ref_prefix.tsv >> ../$commandlog
+                python $hsblastparse $longr_prefix.hsblast-$ref_prefix <($longr) ../../$logfile > $longr_prefix.hsblast-$ref_prefix.tsv
+        else
+                echo \*\*\*HS-BLAST output required!\*\*\* >> ../$commandlog
+                echo \*\*\*HS-BLAST output required!\*\*\* >> ../../$logfile
+                echo \*\*\*HS-BLAST output required!\*\*\*
+                deactivate
+                exit 1
+        fi
+else
+        echo SKIPPING - HS-BLAST Parse >> ../../$logfile
+        echo SKIPPING - python $hsblastparse $longr_prefix.hsblast-$ref_prefix \<\($longr\) ../../$logfile \> $longr_prefix.hsblast-$ref_prefix.tsv >> ../$commandlog
+fi
+
+#Calculate total genome bases coverage
+basecov=$(awk -F'\t' '{s+=$3} END {printf "%.f", s}' $longr_prefix.hsblast-$ref_prefix.tsv)
+depthx=$(python -c "print float($basecov)/$totalgsize")
+depthi=$(python -c "print int($basecov)/$totalgsize")
+splitx=$(python -c "print int($depthx/4)") #Flooring
+
+if [ $depthi -lt 1 ]; then
+        depth='<1'
+        echo "<WARNING: Long read sequencing depth is below recommended depth of more than 4x, output may not be comprehensive>" >> $stout
+        echo "<WARNING: Long read sequencing depth is below recommended depth of more than 4x, output may not be comprehensive>" >> ../../$logfile
+elif [ $depthi -lt 4 ]; then
+        depth=$depthx
+        echo "<WARNING: Long read sequencing depth is below recommended depth of more than 4x, output may not be comprehensive>" >> $stout
+        echo "<WARNING: Long read sequencing depth is below recommended depth of more than 4x, output may not be comprehensive>" >> ../../$logfile
+else
+        depth=$depthx
+fi
+
+echo -ne 'Progress: [ ######-------------- ]  (32%)\r' >> $stout
+
+if [ $splitx -lt 1 ]; then
+        split=1
+else
+        split=1 #$splitx   Split not in use
+fi
+
+#Splitted coverage
+splitcov=$(python -c "print float($depthx)/$split")
+
+#Estimate long read overlap upper outlier limit 
+maxovl=$(python $outlier $longr_prefix.hsblast-$ref_prefix.tsv $totalgsize ../$ref_prefix.genomesizes $split $bedtoolpath)
+
+{ echo "
+Longread_overlap_upper_limit=$maxovl
+Genome_size=$totalgsize bases
+Mapped_bases=$basecov bases
+Seq_depth=$depth x
+Number_of_splits=$split
+Splitted_coverage=$splitcov
+"
+} >> ../../$logfile
+
+#SV detection
+if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv ]; then
+        if [ -s $longr_prefix.hsblast-$ref_prefix.tsv ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] SV detection >> ../../$logfile
+                echo python $hsblastdetect $longr_prefix.hsblast-$ref_prefix.tsv $svthres $filter ../../$logfile \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv >> ../$commandlog
+                python $hsblastdetect $longr_prefix.hsblast-$ref_prefix.tsv $svthres $filter ../../$logfile > $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv
+        else
+                echo \*\*\*HS-BLAST parsed file required!\*\*\* >> ../$commandlog
+                echo \*\*\*HS-BLAST parsed file required!\*\*\* >> ../../$logfile
+                echo \*\*\*HS-BLAST parsed file required!\*\*\*
+                deactivate
+                exit 1
+        fi
+else
+        echo SKIPPING - SV detection >> ../../$logfile
+        echo SKIPPING - python $hsblastdetect $longr_prefix.hsblast-$ref_prefix.tsv $svthres $filter ../../$logfile \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv >> ../$commandlog
+fi
+
+#Parse SVs for SV Breakpoint
+if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv ]; then
+        if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] Parse SVs to get SV Breakpoint >> ../../$logfile
+                echo python $svparse $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv $svlen ../../$logfile \| $bedtoolpath sort -i - \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv >> ../$commandlog
+                python $svparse $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv $svlen ../../$logfile | $bedtoolpath sort -i - > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv
+        else
+                echo \*\*\*SV detect file required!\*\*\* >> ../$commandlog
+                echo \*\*\*SV detect file required!\*\*\* >> ../../$logfile
+                echo \*\*\*SV detect file required!\*\*\*
+                deactivate
+                exit 1
+        fi
+else
+        echo SKIPPING - Parse SVs to get SV Breakpoint >> ../../$logfile
+        echo SKIPPING - python $svparse $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv $svlen ../../$logfile \| $bedtoolpath sort -i - \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv >> ../$commandlog
+fi
+
+echo -ne 'Progress: [ #######------------- ]  (35%)\r' >> $stout
+
+if [ $split -eq 1 ]; then
+        #Calculating long read coverage of each SV and sorting
+        if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv ]; then
+                if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Calculating SV long read coverage and sorting >> ../../$logfile
+                        echo python $svoverlap $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath 1 \| awk -F\'\\t\' \"\{if \($maxovl\>\$11+\$13 \&\& \$11+\$13\>=$minovl\) print \$0\}\" \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1 >> ../$commandlog
+                        echo $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv >> ../$commandlog
+                        echo rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1 >> ../$commandlog
+                        python $svoverlap $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath 1 | awk -F'\t' "{if ($maxovl>\$11+\$13 && \$11+\$13>=$minovl) print \$0}" > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1
+                        $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1 > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv
+                        rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1
+                else
+                        echo \*\*\*SV Parse file required\*\*\* >> ../$commandlog
+                        echo \*\*\*SV Parse file required\*\*\* >> ../../$logfile
+                        echo \*\*\*SV Parse file required\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Calculating SV long read coverage and sorting >> ../../$logfile
+                echo SKIPPING - python $svoverlap $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath 1 \| awk -F\'\\t\' \"\{if \($maxovl\>\$11+\$13 \&\& \$11+\$13\>=$minovl\) print \$0\}\" \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1 >> ../$commandlog
+                echo SKIPPING - $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv >> ../$commandlog
+                echo SKIPPING - rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv1 >> ../$commandlog
+        fi
+        
+        #Apply ANN inference (Overlap)
+        if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ]; then
+                if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Apply ANN inference \(Overlap\) >> ../../$logfile
+                        echo python -W ignore $svANNinfer $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $ANNmodel $maxovl $splitcov overlap \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 >> ../$commandlog
+                        echo $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv >> ../$commandlog
+                        echo rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 >> ../$commandlog
+                        echo awk -F\'\\t\' \"\{if \(\$14\>=$annthres\) print \$0\}\" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv >> ../$commandlog
+                        echo cut -f 9,12 $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv \| awk -F\'\\t\' \'\{print substr\($1,length\($1\)-4,length\($1\)\)\"~\"substr\($1,1,length\($1\)-6\)\"\t\"$2\}\' \| sed \'1 i\\Lead_idx~readnames\\tSupporting_readnames~idx\' \> ../../nanovar_results/$longr_prefix.svread-overlap.tsv >> ../$commandlog
+                        python -W ignore $svANNinfer $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $ANNmodel $maxovl $splitcov overlap > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 2> tmp
+                        $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv
+                        rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1
+                        awk -F'\t' "{if (\$14>=$annthres) print \$0}" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv | sort -t $'\t' -k9,9 > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv
+                        cut -f 9,12 $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv | awk -F'\t' '{print substr($1,length($1)-4,length($1))"~"substr($1,1,length($1)-6)"\t"$2}' | sed '1 i\Lead_idx~readnames\tSupporting_readnames~idx' > ../../nanovar_results/$longr_prefix.svread-overlap.tsv
+                else
+                        echo \*\*\*SV Overlap file required\*\*\* >> ../$commandlog
+                        echo \*\*\*SV Overlap file required\*\*\* >> ../../$logfile
+                        echo \*\*\*SV Overlap file required\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Apply ANN inference \(Overlap\) >> ../../$logfile
+                echo SKIPPING - python -W ignore $svANNinfer $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.tsv $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $ANNmodel $maxovl $splitcov overlap \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 >> ../$commandlog
+                echo SKIPPING - $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv >> ../$commandlog
+                echo SKIPPING - rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv1 >> ../$commandlog
+                echo SKIPPING - awk -F\'\\t\' \"\{if \(\$14\>=$annthres\) print \$0\}\" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN.tsv \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv >> ../$commandlog
+                echo SKIPPING - cut -f 9,12 $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv \| awk -F\'\\t\' \'\{print substr\($1,length\($1\)-4,length\($1\)\)\"~\"substr\($1,1,length\($1\)-6\)\"\t\"$2\}\' \| sed \'1 i\\Lead_idx~readnames\\tSupporting_readnames~idx\' \> ../../nanovar_results/$longr_prefix.svread-overlap.tsv >> ../$commandlog
+        fi
+elif [ $split -gt 1 ]; then
+        #Proceed to split parse file
+        if [ ! -s parse_$split.tsv ]; then
+                if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Split parse file $split times >> ../../$logfile
+                        echo python $svrandomsplit $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $split 1 >> ../$commandlog
+                        python $svrandomsplit $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $split 1
+                else
+                        echo \*\*\*SV Parse file required\*\*\* >> ../$commandlog
+                        echo \*\*\*SV Parse file required\*\*\* >> ../../$logfile
+                        echo \*\*\*SV Parse file required\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Split parse file $split times >> ../../$logfile
+                echo SKIPPING - python $svrandomsplit $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $split 1 >> ../$commandlog
+        fi
+        
+        #Calculating long read coverage of each SV and sorting (Multi parse files)
+        if [ ! -s parse.overlap.total.tsv ]; then
+                if [ -s parse_$split.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Calculating long read cov to split multi parse files >> ../../$logfile
+                        for i in $(seq $split)
+                        do
+                            echo python $svoverlap parse_$i.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath $split \| awk -F\'\\t\' \"\{if \($maxovl\>\$11+\$13 \&\& \$11+\$13\>=$minovl\) print \$0\}\" \> parse.overlap.$i.tsv >> ../$commandlog
+                            python $svoverlap parse_$i.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath $split | awk -F'\t' "{if ($maxovl>\$11+\$13 && \$11+\$13>=$minovl) print \$0}" > parse.overlap.$i.tsv
+                        done
+                        echo cat parse.overlap.* \> parse.overlap.total.tsv >> ../$commandlog
+                        cat parse.overlap.* > parse.overlap.total.tsv
+                else
+                        echo \*\*\*SV Parse split file required\*\*\* >> ../$commandlog
+                        echo \*\*\*SV Parse split file required\*\*\* >> ../../$logfile
+                        echo \*\*\*SV Parse split file required\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Calculating long read cov to split multi parse files >> ../../$logfile
+                echo SKIPPING - python $svoverlap parse_$i.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath $split \| awk -F\'\\t\' \"\{if \($maxovl\>\$11+\$13 \&\& \$11+\$13\>=$minovl\) print \$0\}\" \> parse.overlap.$i.tsv >> ../$commandlog
+                echo SKIPPING - cat parse.overlap.* \> parse.overlap.total.tsv >> ../$commandlog
+        fi
+        
+        #Apply ANN inference (Parse)
+        if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv ]; then
+                if [ -s parse.overlap.total.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Apply ANN inference \(Parse\) >> ../../$logfile
+                        echo python -W ignore parse.overlap.total.tsv $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $ANNmodel $maxovl $splitcov parse \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN.tsv >> ../$commandlog
+                        echo awk -F\'\\t\' \"\{if \(\$11\>=$annthres\) print \$0\}\" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN.tsv \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv >> ../$commandlog
+                        python -W ignore $svANNinfer parse.overlap.total.tsv $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $ANNmodel $maxovl $splitcov parse > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN.tsv 2> tmp
+                        awk -F'\t' "{if (\$11>=$annthres) print \$0}" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN.tsv > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv
+                else
+                        echo \*\*\*Multi SV Overlap file required\*\*\* >> ../$commandlog
+                        echo \*\*\*Multi SV Overlap file required\*\*\* >> ../../$logfile
+                        echo \*\*\*Multi SV Overlap file required\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Apply ANN inference \(Parse\) >> ../../$logfile
+                echo SKIPPING - python -W ignore parse.overlap.total.tsv $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.tsv $ANNmodel $maxovl $splitcov parse \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN.tsv >> ../$commandlog
+                echo SKIPPING - awk -F\'\\t\' \"\{if \(\$11\>=$annthres\) print \$0\}\" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN.tsv \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv >> ../$commandlog
+        fi
+        
+        #Calculating long read coverage of each SV and sorting (Final)
+        if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ]; then
+                if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Calculating SV long read coverage and sorting \(Final\) >> ../../$logfile
+                        echo python $svoverlap $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath 1 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1 >> ../$commandlog
+                        echo $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1 \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv >> ../$commandlog
+                        echo rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1 >> ../$commandlog
+                        echo cut -f 9,12 $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv \| awk -F\'\\t\' \'\{print substr\($1,length\($1\)-4,length\($1\)\)\"~\"substr\($1,1,length\($1\)-6\)\"\t\"$2\}\' \| sed \'1 i\\Lead_idx~readnames\\tSupporting_readnames~idx\' \> ../../nanovar_results/$longr_prefix.svread-overlap.tsv >> ../$commandlog
+                        python $svoverlap $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath 1 > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1
+                        $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1 | sort -t $'\t' -k9,9 > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv
+                        rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1
+                        cut -f 9,12 $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv | awk -F'\t' '{print substr($1,length($1)-4,length($1))"~"substr($1,1,length($1)-6)"\t"$2}' | sed '1 i\Lead_idx~readnames\tSupporting_readnames~idx' > ../../nanovar_results/$longr_prefix.svread-overlap.tsv
+                else
+                        echo \*\*\*SV Parse ANN file required\*\*\* >> ../$commandlog
+                        echo \*\*\*SV Parse ANN file required\*\*\* >> ../../$logfile
+                        echo \*\*\*SV Parse ANN file required\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Calculating SV long read coverage and sorting \(Final\) >> ../../$logfile
+                echo SKIPPING - python $svoverlap $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.ANN$annthres.tsv $longr_prefix.hsblast-$ref_prefix.tsv 50 $bedtoolpath 1 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1 >> ../$commandlog
+                echo SKIPPING - $bedtoolpath sort -i $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1 \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv >> ../$commandlog
+                echo SKIPPING - rm $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv1 >> ../$commandlog
+                echo SKIPPING - cut -f 9,12 $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv \| awk -F\'\\t\' \'\{print substr\($1,length\($1\)-4,length\($1\)\)\"~\"substr\($1,1,length\($1\)-6\)\"\t\"$2\}\' \| sed \'1 i\\Lead_idx~readnames\\tSupporting_readnames~idx\' \> ../../nanovar_results/$longr_prefix.svread-overlap.tsv >> ../$commandlog
+        fi
+else
+        echo "<ERROR Parse file split failure>"
+        deactivate
+        exit 1
+fi
+
+echo -ne 'Progress: [ ########------------ ]  (40%)\r' >> $stout
+
+if [ $shortr1 == "NIL" ]; then
+        #Only Long reads will be used
+        #Add dummy coverage column to ANN file and sort
+        if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv ]; then
+                if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Addition of dummy cov column and sort >> ../../$logfile
+                        echo awk -F\'\\t\' \"\{print \$0\"\\t.\"\}\" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv >> ../$commandlog
+                        awk -F'\t' "{print \$0\"\t.\"}" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv | sort -t $'\t' -k9,9  > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv
+                else
+                        echo \*\*\*Overlap ANN file required!\*\*\* >> ../$commandlog
+                        echo \*\*\*Overlap ANN file required!\*\*\* >> ../../$logfile
+                        echo \*\*\*Overlap ANN file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Addition of dummy cov column and sort >> ../../$logfile
+                echo SKIPPING - awk -F\'\\t\' \"\{print \$0\"\\t.\"\}\" $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv >> ../$commandlog
+        fi
+	
+        #Save bowtie2 DUMMY command
+        echo NA > ../bowsavecmd.txt
+        
+        cd ../
+	
+        #Counting number of chromosomes in reference
+        chrnum=$(python $svchrnum $ref_prefix.genomesizes)
+        num=$(( 25 + $chrnum ))
+        numt=$(( 26 + $chrnum ))
+        
+        echo -ne 'Progress: [ ################---- ]  (80%)\r' >> $stout
+        
+        #Create VCF file
+        if [ ! -s ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf ]; then
+                if [ -s ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Creating VCF file >> ../$logfile
+                        echo python $svvcfparse ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv $ref $longread $shortr1 $shortr2 bowsavecmd.txt hsblastsavecmd.txt $ref_prefix.genomesizes $bedtoolpath \> $longr_prefix.output.vcf.tmp >> $commandlog
+                        python $svvcfparse ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv $ref $longread $shortr1 $shortr2 bowsavecmd.txt hsblastsavecmd.txt $ref_prefix.genomesizes $bedtoolpath > $longr_prefix.output.vcf.tmp
+                        #Sorting VCF file
+                        echo \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.total.vcf >> $commandlog
+                        echo \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| awk -F\'\\t\' \"\{if \(\$6\>=\$pthres\) print \$0\}\" \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf >> $commandlog
+                        echo rm $longr_prefix.output.vcf.tmp >> $commandlog
+                        (head -n $num $longr_prefix.output.vcf.tmp && tail -n +$numt $longr_prefix.output.vcf.tmp | $bedtoolpath sort -i -) > ../nanovar_results/$longr_prefix.output.total.vcf
+                        (head -n $num $longr_prefix.output.vcf.tmp && tail -n +$numt $longr_prefix.output.vcf.tmp | awk -F'\t' "{if (\$6>=$pthres) print \$0}" | $bedtoolpath sort -i -) > ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf
+                        rm $longr_prefix.output.vcf.tmp
+                else
+                        echo \*\*\*SV overlap cov file required!\*\*\* >> $commandlog
+                        echo \*\*\*SV overlap cov file required!\*\*\* >> ../$logfile
+                        echo \*\*\*SV overlap cov file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Creating VCF file >> ../$logfile
+                echo SKIPPING - python $svvcfparse ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.cov.tsv $ref $longread $shortr1 $shortr2 bowsavecmd.txt hsblastsavecmd.txt $ref_prefix.genomesizes $bedtoolpath \> $longr_prefix.output.vcf.tmp >> $commandlog
+                echo SKIPPING - \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.total.vcf >> $commandlog
+                echo SKIPPING - \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| awk -F\'\\t\' \"\{if \(\$6\>=\$pthres\) print \$0\}\" \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf >> $commandlog
+                echo SKIPPING - rm $longr_prefix.output.vcf.tmp >> $commandlog
+        fi
+else
+        #Incorporate short reads
+        #SV reads correction, fasta generation
+        if [ ! -s ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.fa ]; then
+                if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] SV reads correction, fasta generation >> ../../$logfile
+                        echo python $svcorrect $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv \<\($longr\) $ref $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ../../$logfile \> ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.fa >> ../$commandlog
+                        python $svcorrect $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv <($longr) $ref $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ../../$logfile > ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.fa
+                else
+                        echo \*\*\*OverlapANN file required!\*\*\* >> ../$commandlog
+                        echo \*\*\*OverlapANN file required!\*\*\* >> ../../$logfile
+                        echo \*\*\*OverlapANN file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - SV reads correction, fasta generation >> ../../$logfile
+                echo SKIPPING - python $svcorrect $longr_prefix.hsblast-$ref_prefix.SV$svthres.tsv \<\($longr\) $ref $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ../../$logfile \> ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.fa >> ../$commandlog
+        fi
+        
+        echo -ne 'Progress: [ ##########---------- ]  (50%)\r' >> $stout
+        
+        cd ../bowtie2_shortreads/
+        
+        #Build bowtie SV reference genome index
+        if [ ! -s $longr_prefix.overlap.ANN$annthres.correct.4.bt2 ]; then
+                if [ -s $longr_prefix.overlap.ANN$annthres.correct.fa ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Build bowtie2 SV reference genome index >> ../../$logfile
+                        echo $bowtie2build --threads $nthreads -q $longr_prefix.overlap.ANN$annthres.correct.fa $longr_prefix.overlap.ANN$annthres.correct >> ../$commandlog
+                        $bowtie2build --threads $nthreads -q $longr_prefix.overlap.ANN$annthres.correct.fa $longr_prefix.overlap.ANN$annthres.correct
+                else
+                        echo \*\*\*SV fasta file required!\*\*\* >> ../$commandlog
+                        echo \*\*\*SV fasta file required!\*\*\* >> ../../$logfile
+                        echo \*\*\*SV fasta file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Build bowtie2 SV reference genome index >> ../../$logfile
+                echo SKIPPING - $bowtie2build --threads $nthreads -q $longr_prefix.overlap.ANN$annthres.correct.fa $longr_prefix.overlap.ANN$annthres.correct >> ../$commandlog
+        fi
+        
+        echo -ne 'Progress: [ ###########--------- ]  (55%)\r' >> $stout
+        
+        #Aligning NGS short-reads to nanopore SV reference genome 
+        if [ ! -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam ]; then
+                if [ -s $longr_prefix.overlap.ANN$annthres.correct.4.bt2 ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Align short reads to long SV read >> ../../$logfile
+                        echo $bowtie2path -p $nthreads $shorttype --no-unal --quiet -x $longr_prefix.overlap.ANN$annthres.correct -1 $shortr1 -2 $shortr2 \| $samtoolpath view -@ $nthreads -Sb -f 2 - \| $samtoolpath sort -@ $nthreads -n - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam >> ../$commandlog
+                        $bowtie2path -p $nthreads $shorttype --no-unal --quiet -x $longr_prefix.overlap.ANN$annthres.correct -1 $shortr1 -2 $shortr2 | $samtoolpath view -@ $nthreads -Sb -f 2 - | $samtoolpath sort -@ $nthreads -n - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam 2> tmp
+                else
+                        echo \*\*\*SV fasta bowtie2 index files required!\*\*\* >> ../$commandlog
+                        echo \*\*\*SV fasta bowtie2 index files required!\*\*\* >> ../../$logfile
+                        echo \*\*\*SV fasta bowtie2 index files required!\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Align short reads to long SV read >> ../../$logfile
+                echo SKIPPING - $bowtie2path -p $nthreads $shorttype --no-unal --quiet -x $longr_prefix.overlap.ANN$annthres.correct -1 $shortr1 -2 $shortr2 \| $samtoolpath view -@ $nthreads -Sb -f 2 - \| $samtoolpath sort -@ $nthreads -n - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam >> ../$commandlog
+        fi
+        
+        #Save bowtie2 command for VCF file
+        echo bowtie2 -p $nthreads --no-unal -x $longr_prefix.overlap.ANN$annthres.correct -1 $shortr1 -2 $shortr2 > ../bowsavecmd.txt
+        
+        echo -ne 'Progress: [ ###############----- ]  (75%)\r' >> $stout
+        
+        #Extracting FASTQ from BAM file
+        if [ ! -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq ]; then
+                if [ -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Extracting fastq from bam >> ../../$logfile
+                        echo $samtoolpath fastq -@ $nthreads -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam >> ../$commandlog
+                        $samtoolpath fastq -@ $nthreads -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam 2> tmp
+                else
+                        echo \*\*\*BAM1 file required!\*\*\* >> ../$commandlog
+                        echo \*\*\*BAM1 file required!\*\*\* >> ../../$logfile
+                        echo \*\*\*BAM1 file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi 
+        else
+                echo SKIPPING - Extracting fastq from bam >> ../../$logfile
+                echo SKIPPING - $samtoolpath fastq -@ $nthreads -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns.bam >> ../$commandlog
+        fi
+        
+        #Build bowtie2 hg38_analysisSet reference genome index
+        if [ ! -s $ref_prefix.4.bt2 ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] Build bowtie2 reference genome index >> ../../$logfile
+                echo $bowtie2build --threads $nthreads -q $ref $ref_prefix >> ../$commandlog
+                $bowtie2build --threads $nthreads -q $ref $ref_prefix
+        else
+                echo SKIPPING - Build bowtie2 reference genome index >> ../../$logfile
+                echo SKIPPING - $bowtie2build --threads $nthreads -q $ref $ref_prefix >> ../$commandlog
+        fi
+        
+        #Aligning Nanopore mapped NGS short-reads to hg38_analysisSet to filter non-concordant reads 
+        if [ ! -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam ]; then
+                if [ -s $ref_prefix.4.bt2 -a -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Aligning SV mapped short-reads to reference genome >> ../../$logfile
+                        echo $bowtie2path -p $nthreads --quiet -x $ref_prefix -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq \| $samtoolpath view -@ $nthreads -Sb -F 2 - \| $samtoolpath sort -@ $nthreads -n - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam >> ../$commandlog
+                        $bowtie2path -p $nthreads --quiet -x $ref_prefix -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq | $samtoolpath view -@ $nthreads -Sb -F 2 - | $samtoolpath sort -@ $nthreads -n - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam 2> tmp
+                else
+                        echo \*\*\*Fastq1 or bowtie2 index files required!\*\*\* >> ../$commandlog
+                        echo \*\*\*Fastq1 or bowtie2 index files required!\*\*\* >> ../../$logfile
+                        echo \*\*\*Fastq1 or bowtie2 index files required!\*\*\*
+                        deactivate
+                        exit 1
+                fi 
+        else
+                echo SKIPPING - Aligning SV mapped short-reads to reference genome >> ../../$logfile
+                echo SKIPPING - $bowtie2path -p $nthreads --quiet -x $ref_prefix -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_2.fastq \| $samtoolpath view -@ $nthreads -Sb -F 2 - \| $samtoolpath sort -@ $nthreads -n - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam >> ../$commandlog
+        fi
+        
+        #Extracting FASTQ from BAM file
+        if [ ! -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq ]; then
+                if [ -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Extracting fastq from bam >> ../../$logfile
+                        echo $samtoolpath fastq -@ $nthreads -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam >> ../$commandlog
+                        $samtoolpath fastq -@ $nthreads -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam 2> tmp
+                else
+                        echo \*\*\*BAM2 file required!\*\*\* >> ../$commandlog
+                        echo \*\*\*BAM2 file required!\*\*\* >> ../../$logfile
+                        echo \*\*\*BAM2 file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi 
+        else
+                echo SKIPPING - Extracting fastq from bam >> ../../$logfile
+                echo SKIPPING - $samtoolpath fastq -@ $nthreads -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns.bam >> ../$commandlog
+        fi
+        
+        echo -ne 'Progress: [ #################--- ]  (85%)\r' >> $stout
+        
+        #Aligning Nanopore mapped NGS unmapped short-reads to SV reference genome to determine breakpoint coverages
+        if [ ! -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam ]; then
+                if [ -s $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Align reference unmapped short reads to SV long reads >> ../../$logfile
+                        echo $bowtie2path -p $nthreads --quiet -x $longr_prefix.overlap.ANN$annthres.correct -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq \| $samtoolpath view -@ $nthreads -Sb -f 2 - \| $samtoolpath sort -@ $nthreads - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam >> ../$commandlog
+                        echo $samtoolpath index $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam >> ../$commandlog
+                        $bowtie2path -p $nthreads --quiet -x $longr_prefix.overlap.ANN$annthres.correct -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq | $samtoolpath view -@ $nthreads -Sb -f 2 - | $samtoolpath sort -@ $nthreads - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam 2> tmp
+                        $samtoolpath index $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam
+                else
+                        echo \*\*\*Fastq2 files required!\*\*\* >> ../$commandlog
+                        echo \*\*\*Fastq2 files required!\*\*\* >> ../../$logfile
+                        echo \*\*\*Fastq2 files required!\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Align reference unmapped short reads to SV long reads >> ../../$logfile
+                echo SKIPPING - $bowtie2path -p $nthreads --quiet -x $longr_prefix.overlap.ANN$annthres.correct -1 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_1.fastq -2 $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_2.fastq \| $samtoolpath view -@ $nthreads -Sb -f 2 - \| $samtoolpath sort -@ $nthreads - -o $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam >> ../$commandlog
+                echo SKIPING - $samtoolpath index $longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam >> ../$commandlog
+        fi
+        
+        cd ../hsblast_longreads/
+        
+        #Assigning short-read coverage to SVs of long read and filtering
+        if [ ! -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv ]; then
+                if [ -s $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv -a -s ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Calculate short-read coverage to SVs of long read and filtering >> ../../$logfile
+                        echo python $svscov $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam 400 $bedtoolpath \| awk -F\'\\t\' \"\{if \($mincov\<=\$15 \&\& \$15\<=$maxcov\) print \$0\}\" \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv >> ../$commandlog
+                        python $svscov $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam 400 $bedtoolpath | awk -F'\t' "{if ($mincov<=\$15 && \$15<=$maxcov) print \$0}" | sort -t $'\t' -k9,9 > $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv
+                else
+                        echo \*\*\*Overlap ANN file or bedgraph file required!\*\*\* >> ../$commandlog
+                        echo \*\*\*Overlap ANN file or bedgraph file required!\*\*\* >> ../../$logfile
+                        echo \*\*\*Overlap ANN file or bedgraph file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi 
+        else
+                echo SKIPPING - Assigning short-read coverage to SVs of long read and filtering >> ../../$logfile
+                echo SKIPPING - python $svscov $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.tsv ../bowtie2_shortreads/$longr_prefix.overlap.ANN$annthres.correct.bow-longr-f2-ns_bow-$ref_prefix-F2-ns_bow-longr-f2-s.bam 400 $bedtoolpath \| awk -F\'\\t\' \"\{if \($mincov\<=\$15 \&\& \$15\<=$maxcov\) print \$0\}\" \| sort -t $\'\\t\' -k9,9 \> $longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv >> ../$commandlog
+        fi
+        
+        cd ../
+        
+        echo -ne 'Progress: [ ##################- ]  (95%)\r' >> $stout
+                
+        #Counting number of chromosomes in reference
+        chrnum=$(python $svchrnum $ref_prefix.genomesizes)
+        num=$(( 25 + $chrnum ))
+        numt=$(( 26 + $chrnum ))
+        
+        #Create VCF file
+        if [ ! -s ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf ]; then
+                if [ -s ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv ]; then
+                        echo [$(date "+%a-%d-%b %H:%M:%S")] Creating VCF file >> ../$logfile
+                        echo python $svvcfparse ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv $ref $longread $shortr1 $shortr2 bowsavecmd.txt hsblastsavecmd.txt $ref_prefix.genomesizes $bedtoolpath \> $longr_prefix.output.vcf.tmp >> $commandlog
+                        python $svvcfparse ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv $ref $longread $shortr1 $shortr2 bowsavecmd.txt hsblastsavecmd.txt $ref_prefix.genomesizes $bedtoolpath > $longr_prefix.output.vcf.tmp
+                        #Sorting VCF file
+                        echo \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.vcf >> $commandlog
+                        echo \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| awk -F\'\\t\' \"\{if \(\$6\>=\$pthres\) print \$0\}\" \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf >> $commandlog
+                        echo rm $longr_prefix.output.vcf.tmp >> $commandlog
+                        (head -n $num $longr_prefix.output.vcf.tmp && tail -n +$numt $longr_prefix.output.vcf.tmp | $bedtoolpath sort -i -) > ../nanovar_results/$longr_prefix.output.total.vcf
+                        (head -n $num $longr_prefix.output.vcf.tmp && tail -n +$numt $longr_prefix.output.vcf.tmp | awk -F'\t' "{if (\$6>=$pthres) print \$0}" | $bedtoolpath sort -i -) > ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf
+                        rm $longr_prefix.output.vcf.tmp
+                else
+                        echo \*\*\*SV overlap cov file required!\*\*\* >> $commandlog
+                        echo \*\*\*SV overlap cov file required!\*\*\* >> ../$logfile
+                        echo \*\*\*SV overlap cov file required!\*\*\*
+                        deactivate
+                        exit 1
+                fi
+        else
+                echo SKIPPING - Creating VCF file >> ../$logfile
+                echo SKIPPING - python $svvcfparse ./hsblast_longreads/$longr_prefix.hsblast-$ref_prefix.SV$svthres.parse$svlen.$minovl-$maxovl.overlap.ANN$annthres.$mincov-$maxcov.tsv $ref $longread $shortr1 $shortr2 bowsavecmd.txt hsblastsavecmd.txt $ref_prefix.genomesizes $bedtoolpath \> $longr_prefix.output.vcf.tmp >> $commandlog
+                echo SKIPPING - \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.total.vcf >> $commandlog
+                echo SKIPPING - \(head -n $num $longr_prefix.output.vcf.tmp \&\& tail -n \+$numt $longr_prefix.output.vcf.tmp \| awk -F\'\\t\' \"\{if \(\$6\>=\$pthres\) print \$0\}\" \| $bedtoolpath sort -i -\) \> ../nanovar_results/$longr_prefix.output.filtered-$pthres.vcf >> $commandlog
+                echo SKIPPING - rm $longr_prefix.output.vcf.tmp >> $commandlog
+        fi
+fi
+
+cd ../nanovar_results
+
+#Create HTML report
+if [ ! -s $longr_prefix.output.report.html ]; then
+        if [ -s $longr_prefix.output.filtered-$pthres.vcf ] && [ -s $longr_prefix.output.total.vcf ]; then
+                echo [$(date "+%a-%d-%b %H:%M:%S")] Creating HTML report >> ../$logfile
+                echo python $svreport $longr_prefix.output.total.vcf $longr_prefix.output.filtered-$pthres.vcf $num $pthres \<\($longr\) $ref $longread >> ../nanovar_run/$commandlog
+                echo cp -r $maindir/scripts/css ./ >> ../nanovar_run/$commandlog
+                echo cp -r $maindir/scripts/js ./ >> ../nanovar_run/$commandlog
+                python $svreport $longr_prefix.output.total.vcf $longr_prefix.output.filtered-$pthres.vcf $num $pthres <($longr) $ref $longread
+                cp -r $maindir/scripts/css ./
+                cp -r $maindir/scripts/js ./
+                deactivate
+        else
+                echo \*\*\*VCF files required!\*\*\* >> ../nanovar_run/$commandlog
+                echo \*\*\*VCF files required!\*\*\* >> ../$logfile
+                echo \*\*\*VCF files required!\*\*\*
+                deactivate
+                exit 1
+        fi
+else
+        echo SKIPPING - Creating HTML report >> ../$logfile
+        echo SKIPPING - python $svreport $longr_prefix.output.total.vcf $longr_prefix.output.filtered-$pthres.vcf $num $pthres \<\($longr\) $ref $longread >> ../nanovar_run/$commandlog
+        echo SKIPPING - cp -r $maindir/scripts/css ./ >> ../nanovar_run/$commandlog
+        echo SKIPPING - cp -r $maindir/scripts/js ./ >> ../nanovar_run/$commandlog
+        deactivate
+fi
+
+cd ../nanovar_run
+
+mv $commandlog ../
+
+#Remove files
+rm bowsavecmd.txt
+rm hsblastsavecmd.txt
+rm hsblast_longreads/bed* 1>hsblast_longreads/tmp 2>&1
+rm hsblast_longreads/intersect.txt 1>hsblast_longreads/tmp 2>&1
+rm hsblast_longreads/intersect2.txt 1>hsblast_longreads/tmp 2>&1
+rm $ref_prefix.genomesizes
+
+{ echo "$(date)
+Run finished successfully" 
+} >> ../$commandlog
+
+{ echo "$(date)
+Run finished successfully" 
+} >> ../$logfile
+
+deactivate 1>hsblast_longreads/tmp 2>&1
+rm bowtie2_shortreads/tmp* 1>hsblast_longreads/tmp 2>&1
+rm hsblast_longreads/tmp*
+
+
+echo -ne 'Progress: [ #################### ]  (100%)\r' >> $stout
+echo -ne '\n' >> $stout
+
+echo "NanoVar finished successfully --- $(date)" >> $stout
+
+exit 0
+# Prerequisites: Python 2.7, cut, awk, sed, basename, rm, date, head, tail, seq, cat, zcat, file, md5sum, bc

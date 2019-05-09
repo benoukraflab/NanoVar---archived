@@ -1,0 +1,128 @@
+#Disabled bowtie2 Linux
+f846237582adf9340d40f9c23e2563e4  ref.fa
+353914b702cdb564ebfa41fa8819bc77  lread_test.fa.gz
+3168ccfb91a64a6d0e3174b05bab9adf  sread1.names_48k.fa.gz
+399fa36013ebec490df7923963ed6892  sread2.names_48k.fa.gz
+c76d425ecd5af4ef0c6059da6e4bb847  ref.fa.fai
+b95f9a36c118811952a149562a7f2d61  ref.fa.nhr
+				  ref.fa.nin
+45d73fff1fd267ff5606831f99a0952d  ref.fa.nsq
+dd20f9ca6221d6ccb3ac9f686e7564b1  ref.fa.bwt
+				  ref.fa.header
+3c4bddf8ddc525bc0fee6ea2ad1ac714  ref.fa.sa
+8506e7d6ecdb13a205dfb5ddc0ee6870  ref.fa.sequence
+2c5c01b1dcfe571a074120d5ae151051  ref.fa.counts
+0b30579e91aeb001cdb57701cbe31579  ref.fa.counts.obinary
+8c68ba585e3584c0c8e8b2ad13964faf  lread_test.hsblast-ref
+c070563dbae248542179c5080146af5d  lread_test.hsblast-ref.SV0.95.parse150.tsv
+0227aa5acaec17ddabf2aa1f454c48f3  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.tsv
+632abc262071733089f262752f374852  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN.tsv
+2ce838d744897896ccc3294f86f9ad8e  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.tsv
+8d4196ea6d2553ebc4b7b2c7cf9b4bb3  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.cov.tsv
+ef6fdc3833dd26ca460b652fb42f3481  total vcf
+8766c25990aee00fe07e7b57aa5b1daa  filtered vcf
+05d1a814056f2795113d3858ea2e094c  lread_test.svread-overlap.tsv
+eee6f3aa4d56c05b483bfacde237d4a8  -
+9f91bc2e801c3f1468002fa00342279d  depth_of_coverage.png
+52a1270529bd7b09145d62fb7eb5508d  read_length_dist.png
+02f3d5b3383f3b5e7cf3798a0eef0abb  scatter1.png
+bba441df77ef0359f05e8f1a87b4ca30  scatter2.png
+434b32f889201c120d279e470fa9a420  sv_lengths.png
+d39dfd3490c659bff92603181d84f9a6  sv_type_donut.png
+
+#Enabled bowtie2 Linux
+f846237582adf9340d40f9c23e2563e4  ref.fa
+353914b702cdb564ebfa41fa8819bc77  lread_test.fa.gz
+3168ccfb91a64a6d0e3174b05bab9adf  sread1.names_48k.fa.gz
+399fa36013ebec490df7923963ed6892  sread2.names_48k.fa.gz
+c76d425ecd5af4ef0c6059da6e4bb847  ref.fa.fai
+b95f9a36c118811952a149562a7f2d61  ref.fa.nhr
+				  ref.fa.nin
+45d73fff1fd267ff5606831f99a0952d  ref.fa.nsq
+dd20f9ca6221d6ccb3ac9f686e7564b1  ref.fa.bwt
+				  ref.fa.header
+3c4bddf8ddc525bc0fee6ea2ad1ac714  ref.fa.sa
+8506e7d6ecdb13a205dfb5ddc0ee6870  ref.fa.sequence
+2c5c01b1dcfe571a074120d5ae151051  ref.fa.counts
+0b30579e91aeb001cdb57701cbe31579  ref.fa.counts.obinary
+8c68ba585e3584c0c8e8b2ad13964faf  lread_test.hsblast-ref
+c070563dbae248542179c5080146af5d  lread_test.hsblast-ref.SV0.95.parse150.tsv
+0227aa5acaec17ddabf2aa1f454c48f3  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.tsv
+632abc262071733089f262752f374852  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN.tsv
+2ce838d744897896ccc3294f86f9ad8e  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.tsv
+106e03e6661155dd2c650f62156da114  lread_test.overlap.ANN0.6.correct.1.bt2
+eae1a5d74420fb4373fa9cd1c22fa330  lread_test.overlap.ANN0.6.correct.2.bt2
+28226cd64614e0e25cbd3bc9fa02602e  lread_test.overlap.ANN0.6.correct.3.bt2
+c1bd49fe25edf2cf908d8b7a3fa1fa4b  lread_test.overlap.ANN0.6.correct.4.bt2
+f1d1e3d4306eae03933109cb3bb7db6f  lread_test.overlap.ANN0.6.correct.rev.1.bt2
+91da4bff0e657e42c000b7bd412c347b  lread_test.overlap.ANN0.6.correct.rev.2.bt2
+1757a67825471a4a86a37fd1b13fbbf3  lread_test.overlap.ANN0.6.correct.bow-longr-f2-ns.bam > sam
+ca5191a9bf508edd401ad1fcd103c229  lread_test.overlap.ANN0.6.correct.bow-longr-f2-ns_1.fastq
+296303b787a8d9c08989fec3c32073eb  lread_test.overlap.ANN0.6.correct.bow-longr-f2-ns_2.fastq
+e49d43c4147ec01e996594a0fc7c863c  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.0-100.tsv
+24438027e0f8cf21643ab1019d6b96a0  total vcf
+207b8eaf23dca13920bc4b2e04fee283  filtered vcf
+05d1a814056f2795113d3858ea2e094c  lread_test.svread-overlap.tsv
+9f91bc2e801c3f1468002fa00342279d  depth_of_coverage.png
+52a1270529bd7b09145d62fb7eb5508d  read_length_dist.png
+02f3d5b3383f3b5e7cf3798a0eef0abb  scatter1.png
+bba441df77ef0359f05e8f1a87b4ca30  scatter2.png
+434b32f889201c120d279e470fa9a420  sv_lengths.png
+d39dfd3490c659bff92603181d84f9a6  sv_type_donut.png
+
+#Disabled bowtie2 Mac
+f846237582adf9340d40f9c23e2563e4  ref.fa
+353914b702cdb564ebfa41fa8819bc77  lread_test.fa.gz
+3168ccfb91a64a6d0e3174b05bab9adf  sread1.names_48k.fa.gz
+399fa36013ebec490df7923963ed6892  sread2.names_48k.fa.gz
+c76d425ecd5af4ef0c6059da6e4bb847  ref.fa.fai
+b95f9a36c118811952a149562a7f2d61  ref.fa.nhr
+				  ref.fa.nin
+45d73fff1fd267ff5606831f99a0952d  ref.fa.nsq
+dd20f9ca6221d6ccb3ac9f686e7564b1  ref.fa.bwt
+				  ref.fa.header
+3c4bddf8ddc525bc0fee6ea2ad1ac714  ref.fa.sa
+8506e7d6ecdb13a205dfb5ddc0ee6870  ref.fa.sequence
+2c5c01b1dcfe571a074120d5ae151051  ref.fa.counts
+0b30579e91aeb001cdb57701cbe31579  ref.fa.counts.obinary
+e1a03413af0a3ca353af416bbb266470  lread_test.hsblast-ref
+a47bf00f659d3ad3c775a5d8ef42aad1  lread_test.hsblast-ref.SV0.95.parse150.tsv
+53341ad7585853a5b443d5114a76f8ab  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.tsv
+1507254320520cac75674a96705747cc  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN.tsv
+e08d7a1b0f89d2aa7bd507ac7115fee9  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.tsv
+87c8aea664e40c63442b08179549d25b  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.cov.tsv
+7b3d6ff15231a9bfcc16e0be36164caa  tail -n +9 vcf
+
+#Enabled bowtie2 Mac
+f846237582adf9340d40f9c23e2563e4  ref.fa
+353914b702cdb564ebfa41fa8819bc77  lread_test.fa.gz
+3168ccfb91a64a6d0e3174b05bab9adf  sread1.names_48k.fa.gz
+399fa36013ebec490df7923963ed6892  sread2.names_48k.fa.gz
+c76d425ecd5af4ef0c6059da6e4bb847  ref.fa.fai
+b95f9a36c118811952a149562a7f2d61  ref.fa.nhr
+				  ref.fa.nin
+45d73fff1fd267ff5606831f99a0952d  ref.fa.nsq
+dd20f9ca6221d6ccb3ac9f686e7564b1  ref.fa.bwt
+				  ref.fa.header
+3c4bddf8ddc525bc0fee6ea2ad1ac714  ref.fa.sa
+8506e7d6ecdb13a205dfb5ddc0ee6870  ref.fa.sequence
+2c5c01b1dcfe571a074120d5ae151051  ref.fa.counts
+0b30579e91aeb001cdb57701cbe31579  ref.fa.counts.obinary
+e1a03413af0a3ca353af416bbb266470  lread_test.hsblast-ref
+a47bf00f659d3ad3c775a5d8ef42aad1  lread_test.hsblast-ref.SV0.95.parse150.tsv
+53341ad7585853a5b443d5114a76f8ab  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.tsv
+1507254320520cac75674a96705747cc  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN.tsv
+e08d7a1b0f89d2aa7bd507ac7115fee9  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.tsv
+60d6b4bb87279446da534542a6166eec  lread_test.overlap.ANN0.6.correct.1.bt2
+ce1323e7bcdea620c3652637f90612a7  lread_test.overlap.ANN0.6.correct.2.bt2
+8e45fe634aaf31ed863b8113d031563a  lread_test.overlap.ANN0.6.correct.3.bt2
+0370c58c494dc6b2f4d0c5ee51bf1f45  lread_test.overlap.ANN0.6.correct.4.bt2
+5ec77f71f659b044b14a40097c8ab541  lread_test.overlap.ANN0.6.correct.rev.1.bt2
+8e917250a3dc2cd47e009f2ae57cf309  lread_test.overlap.ANN0.6.correct.rev.2.bt2
+c86f77001491488416951f696eb2e44f  lread_test.overlap.ANN0.6.correct.bow-longr-f2-ns.bam
+6eb7ae35e9976b93b8b3af050102164a  lread_test.overlap.ANN0.6.correct.bow-longr-f2-ns_1.fastq
+b353d4c2971556410ec118b6e696dda7  lread_test.overlap.ANN0.6.correct.bow-longr-f2-ns_2.fastq
+8c5babf86768d0d3612e362b5749e34d  lread_test.overlap.ANN0.6.correct.bow-longr-f2-ns_bow-ref-F2-ns_bow-longr-f2-s.bedgraph
+266eca48a54494c880fd1fbf17850aa3  lread_test.hsblast-ref.SV0.95.parse150.1-19.overlap.ANN0.6.0-100.tsv
+4288b7058cef7f3db3c531363bed55ba  tail -n +9 vcf
+

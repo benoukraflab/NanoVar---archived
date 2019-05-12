@@ -83,6 +83,7 @@ See [Wiki](https://github.com/benoukraflab/NanoVar/wiki) for more information.
 
 ## Versioning
 See [Releases](https://github.com/benoukraflab/NanoVar/releases)
+
 For development releases, please visit [nanovar-dev](https://github.com/cytham/nanovar-dev)
 
 ## Citation

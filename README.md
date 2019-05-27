@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="http://benoukraf-lab.com/wp-content/uploads/2019/05/Nanovarlogo.png" width="200" alt="accessibility text" align='left'>
+</p>
+
 # NanoVar - Structural variant caller using low-depth Nanopore sequencing 
 
 Latest version 1.0

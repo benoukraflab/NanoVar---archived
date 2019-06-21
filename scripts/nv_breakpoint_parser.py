@@ -51,8 +51,11 @@ l = len(breakpointfile) -1
 c = range(l)
 g = 0
 
-#Function to convert chromosome names to numbers for ranking
+#Function to convert chromosome names to numbers for ranking (Not used)
 def chrnum(chrm):
+    return chrm
+
+'''
     if chrm[3:] == 'X':
         rank = 23
     elif chrm[3:] == 'Y':
@@ -65,9 +68,13 @@ def chrnum(chrm):
         except:
             rank = str(chrm)
     return rank
+'''
 
-#Function to convert numbers back to respective chromosome names
+#Function to convert numbers back to respective chromosome names (Not used)
 def revchrnum(rank):
+    return rank
+
+'''
     if rank == 23:
         chrm = 'chrX'
     elif rank == 24:
@@ -80,6 +87,7 @@ def revchrnum(rank):
         except:
             chrm = rank
     return chrm
+'''
 
 index = [0, 2, 4]
 def getSignature(bp1, name, querymap, sign, realnmaps, elist, bitlist, bps_no, complex_sv, nchrom, short, piden, mismatch, gap_ratio):

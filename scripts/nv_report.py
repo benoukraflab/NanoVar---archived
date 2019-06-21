@@ -342,7 +342,7 @@ begin = """<!DOCTYPE html>
 <div id="margin">
     <div>
         <h1 style="text-align:center;">NanoVar Report</h1>
-        <h5 style="text-align:center;">Version: NanoVar 1.0</h5>
+        <h5 style="text-align:center;">Version: NanoVar 1.0.1</h5>
         <h5 style="text-align:center;">""" + str(now.strftime("%a %d %B %Y")) + """</h5>
         <h5 style="text-align:center;">""" + fastaname + """</h5>
         <br>

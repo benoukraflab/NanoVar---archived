@@ -772,14 +772,7 @@ pythonvirten:
 	$(DIR)/virtualenv-15.2.0/virtualenv.py --python=python2.7 $(DIR)/nv_virtualenv
 	@source $(DIR)/nv_virtualenv/bin/activate; \
 	pip install --upgrade pip; \
-	pip install h5py; \
-	pip install backports.weakref==1.0rc1; \
-	pip install --upgrade tensorflow; \
-	pip install keras; \
-	pip install matplotlib; \
-	pip install seaborn; \
-	pip install statistics; \
-	pip install scipy; \
+	pip install --requirement requirement.txt; \
 	deactivate
 	@echo "Finished installing virtual environment"
 

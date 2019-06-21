@@ -25,7 +25,7 @@ recordcommand="$0 $@"
 #Helpmenu
 function helpmenu() { echo "NanoVar - Structural variant caller for low-depth Nanopore Sequencing.
 Author: Tham Cheng Yong
-Version 1.0
+Version 1.0.1
 Usage:
     "$0" [OPTIONS] -r reference_genome.fa -l longread.fa -t num_threads -o <Output_Dir> -f hg38
 
@@ -48,7 +48,7 @@ Options:
     -S FLOAT            SV threshold score, increasing this will increase precision but decrease recall (<=0) [Default=2.6]"
 }
 
-function version() { echo "NanoVar-1.0";
+function version() { echo "NanoVar-1.0.1";
 }
 
 #Creating variables for tools
@@ -314,7 +314,7 @@ fi
 curr_dir=$(pwd)
 logfile="`date "+%d-%b~%H-%M-%S"`_NanoVar.log"
 commandlog="`date "+%d-%b~%H-%M-%S"`_NanoVar.commandlog"
-{ echo "Log file for NanoVar-1.0.
+{ echo "Log file for NanoVar-1.0.1.
 `date`
 Command $recordcommand
 <Long read fasta file contains no spaces> --- PASSED

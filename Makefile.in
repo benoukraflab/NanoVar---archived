@@ -257,6 +257,8 @@ datarootdir = @datarootdir@
 docdir = @docdir@
 dvidir = @dvidir@
 exec_prefix = @exec_prefix@
+gcccheck = @gcccheck@
+gccversion = @gccversion@
 host = @host@
 host_alias = @host_alias@
 host_cpu = @host_cpu@
@@ -266,6 +268,8 @@ htmldir = @htmldir@
 includedir = @includedir@
 infodir = @infodir@
 install_sh = @install_sh@
+lddcheck = @lddcheck@
+lddversion = @lddversion@
 libdir = @libdir@
 libexecdir = @libexecdir@
 localedir = @localedir@
@@ -757,8 +761,10 @@ all: nnvr
 nnvr: checkversions buildblast pythonvirten movin scriptupdate
 
 checkversions:
+	@echo ${gccversion} | awk -F'.' '{if ($$1<4 || ($$1==4 && $$2<8)) {print "Dependency error: gcc required to be version 4.8.0 or greater"; exit 1}}'
+	@echo ${lddversion} | awk -F'.' '{if ($$1<2 || ($$1==2 && $$2<16)) {print "Dependency error: ldd required to be version 2.16 or greater"; exit 1}}'
 	@echo ${samversion} | awk -F'.' '{if ($$1<1 || ($$1==1 && $$2<4)) {print "Dependency error: samtools required to be version 1.4 or greater"; exit 1}}'
-	@echo ${bedversion} | awk -F'.' '{if ($$1<2 || ($$1==2 && $$2<26)) {print "Dependency error: bedtools required to be version 2.26.0 or greater"; exit 1}}'
+	@echo ${bedversion} | awk -F'.' '{if ($$1<2 || ($$1==2 && $$2<26)) {print "Dependency error: bedtools required to be version 2.26.0 or greater"; exit 1}}'	
 @DISABLE_BOWTIE2_TRUE@	@echo "Compiling with mode --disable-bowtie2"
 @DISABLE_BOWTIE2_FALSE@	@echo ${bowversion} | awk -F'.' '{if ($$1<2 || ($$1==2 && $$2<3) || ($$1==2 && $$2==3 && $$3<4)) {print "Dependency error: bowtie2 required to be version 2.3.4 or greater"; exit 1}}'
 
@@ -800,6 +806,10 @@ check:
 	@$(DIR)/blast/makeblastdb -in $(DIR)/test/pre-check/correct.fa -input_type fasta -dbtype nucl -logfile $(DIR)/test/pre-check/tmp || (echo "Error: makeblastdb binaries test failed, please download Blast v2.7.1+ source, build it and copy 'makeblastdb' binaries into $(DIR)/blast/" && exit 1)
 	@$(DIR)/blast/windowmasker -in $(DIR)/test/pre-check/correct.fa -infmt blastdb -mk_counts -out $(DIR)/test/pre-check/correct.counts 2>$(DIR)/test/pre-check/tmp || (echo "Error: windowmasker binaries test1 failed, please download Blast v2.7.1+ source, build it and copy 'windowmasker' binaries into $(DIR)/blast/" && exit 1)
 	@$(DIR)/blast/windowmasker -in $(DIR)/test/pre-check/correct.counts -sformat obinary -out $(DIR)/test/pre-check/correct.counts.obinary -convert 2>$(DIR)/test/pre-check/tmp 2>$(DIR)/test/pre-check/tmp || (echo "Error: windowmasker binaries test2 failed, please download Blast v2.7.1+ source, build it and copy 'windowmasker' binaries into $(DIR)/blast/" && exit 1)
+	@echo "Testing TensorFlow..."
+	@source $(DIR)/nv_virtualenv/bin/activate; \
+	python -c "import tensorflow" || exit 1; \
+	deactivate
 @DISABLE_BOWTIE2_TRUE@	@cat $(DIR)/test/pre-check/sam | ${samtoolcheck} view -@ 1 -Sb -f 2 - -o $(DIR)/test/pre-check/bam || (echo "Error: samtools view test failed, please ensure samtools is functional" && exit 1)
 @DISABLE_BOWTIE2_TRUE@	@cat $(DIR)/test/pre-check/bam | ${samtoolcheck} sort -@ 1 -n - -o $(DIR)/test/pre-check/bam.sort || (echo "Error: samtools sort test failed, please ensure samtools is functional" && exit 1)
 @DISABLE_BOWTIE2_TRUE@	@${samtoolcheck} fastq -@ 1 -1 $(DIR)/test/pre-check/bam.sort.fq1 -2 $(DIR)/test/pre-check/bam.sort.fq2 $(DIR)/test/pre-check/bam.sort 2>$(DIR)/test/pre-check/tmp || (echo "Error: samtools fastq test failed, please ensure samtools is functional" && exit 1)
@@ -897,6 +907,7 @@ distclean: $(SUBDIRS) $(hsblastdir)
 	@rm -f $(DIR)/config.log
 	@rm -rf $(DIR)/autom4te.cache
 	@rm -f $(DIR)/config.status
+	@rm -f $(DIR)/virtualenv-15.2.0/virtualenv.pyc
 	@echo "DISTCLEAN"
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.

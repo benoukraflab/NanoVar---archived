@@ -1,4 +1,4 @@
-AC_INIT([NanoVar], [1.0], [chengyong.tham@u.nus.edu])
+AC_INIT([NanoVar], [1.0.2], [chengyong.tham@u.nus.edu])
 aclocal
 automake --add-missing
 AM_INIT_AUTOMAKE
@@ -23,6 +23,18 @@ esac
 
 AM_CONDITIONAL([LINUX], [test "x$os_linux" = xyes])
 AM_CONDITIONAL([DARWIN], [test "x$os_mac" = xyes])
+
+#gcc check
+AC_PATH_PROG(gcccheck,gcc,no)
+gccversion=$($gcccheck -dumpversion)
+AS_IF([test -z "$gccversion"], [AC_MSG_ERROR([Error: Could not retrieve gcc version information])])
+AC_SUBST([gccversion])
+
+#ldd check
+AC_PATH_PROG(lddcheck,ldd,no)
+lddversion=$($lddcheck --version | head -n 1 | cut -d " " -f 3)
+AS_IF([test -z "$lddversion"], [AC_MSG_ERROR([Error: Could not retrieve ldd version information])])
+AC_SUBST([lddversion])
 
 #Python2.7 check
 AC_PATH_PROG(pythoncheck,python2.7,no)

@@ -4,7 +4,7 @@
 
 # NanoVar - Structural variant caller using low-depth Nanopore sequencing 
 
-Latest version 1.0.1
+Version 1.0.2
 
 ## Introduction
 NanoVar is a neural-network-based genomic structural variant (SV) caller that utilizes low-depth long-read sequencing data generated from Oxford Nanopore Technologies (ONT). It characterizes SVs with high accuracy and speed using only 4x depth genomic sequencing datasets, thereby saving time, sequencing cost, and computational storage, which makes it compatible for large-scale cohort SV-association studies or routine clinical SV investigations.  
@@ -36,7 +36,9 @@ NanoVar is a neural-network-based genomic structural variant (SV) caller that ut
 #### Prerequisites:
 1. Python 2 (version 2.7.12 or higher)  
 2. Samtools (version 1.4 or higher)  
-3. Bedtools (version 2.26 or higher)  
+3. Bedtools (version 2.26 or higher) 
+4. GCC (gcc --version >= 4.8.0)
+5. GLIBC (ldd --version >= 2.16)
 
 Optional: Bowtie2 (version 2.3.4 or higher, required only if short-reads will be incorporated, otherwise, do "./configure --disable-bowtie2" during installation)  
 

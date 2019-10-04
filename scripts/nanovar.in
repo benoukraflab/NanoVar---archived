@@ -702,8 +702,13 @@ fi
 #Splitted coverage
 splitcov=$(python -c "print float($depthx)/$split")
 
-#Estimate long read overlap upper outlier limit 
-maxovl=$(python $outlier $longr_prefix.hsblast-$ref_prefix.tsv $totalgsize ../$ref_prefix.genomesizes $split $bedtoolpath)
+#Set lower bound of max overlap when depth < 1
+if [ $depth == '<1' ]; then
+	maxovl=10
+else
+	#Estimate long read overlap upper outlier limit 
+	maxovl=$(python $outlier $longr_prefix.hsblast-$ref_prefix.tsv $totalgsize ../$ref_prefix.genomesizes $split $bedtoolpath)
+fi
 
 { echo "
 Longread_overlap_upper_limit=$maxovl

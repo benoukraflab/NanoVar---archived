@@ -1,10 +1,10 @@
+This version has been archived. Please visit [here](https://github.com/cytham/nanovar) for latest versions.
+
 <p align="center">
   <img src="http://benoukraf-lab.com/wp-content/uploads/2019/05/Nanovarlogo.png" width="200" alt="accessibility text" align='left'>
 </p>
 
 # NanoVar - Structural variant caller using low-depth Nanopore sequencing 
-
-Version 1.0.2
 
 ## Introduction
 NanoVar is a neural-network-based genomic structural variant (SV) caller that utilizes low-depth long-read sequencing data generated from Oxford Nanopore Technologies (ONT). It characterizes SVs with high accuracy and speed using only 4x depth genomic sequencing datasets, thereby saving time, sequencing cost, and computational storage, which makes it compatible for large-scale cohort SV-association studies or routine clinical SV investigations.  
